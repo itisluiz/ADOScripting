@@ -1,0 +1,27 @@
+{
+	"name": "adoscripting",
+	"version": "0.0.0",
+	"description": "Azure DevOps scripting tool",
+	"main": "dist/src/functions/*.js",
+	"scripts": {
+		"prebuild": "npm run clean",
+		"prestart": "npm run build",
+		"clean": "rimraf dist",
+		"build": "tsc",
+		"start": "func start",
+		"format": "prettier --write .",
+		"prepare": "husky || echo Continuing without husky installation"
+	},
+	"author": "itisluiz",
+	"license": "ISC",
+	"devDependencies": {
+		"@types/node": "^20.14.9",
+		"husky": "^9.0.11",
+		"prettier": "^3.3.2",
+		"rimraf": "^5.0.7",
+		"typescript": "^5.5.2"
+	},
+	"dependencies": {
+		"@azure/functions": "^4.5.0"
+	}
+}
