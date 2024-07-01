@@ -22,8 +22,11 @@
 		"typescript": "^5.5.2"
 	},
 	"dependencies": {
+		"@azure/data-tables": "^13.2.2",
 		"@azure/functions": "^4.5.0",
 		"@azure/identity": "^4.3.0",
-		"@azure/keyvault-secrets": "^4.8.0"
+		"@azure/keyvault-secrets": "^4.8.0",
+		"azure-devops-node-api": "^14.0.1",
+		"jsonpath-plus": "^9.0.0"
 	}
 }

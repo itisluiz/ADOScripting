@@ -1,4 +1,7 @@
+import { azureCredential } from "./identity";
 import { SecretClient } from "@azure/keyvault-secrets";
-import { credentials } from "./identity";
 
-export const keyvault = new SecretClient(`https://${process.env["AZURE_KEYVAULT_NAME"]}.vault.azure.net`, credentials);
+export const azureKeyvault = new SecretClient(
+	`https://${process.env["AZURE_KEYVAULT_NAME"]}.vault.azure.net`,
+	azureCredential,
+);
