@@ -19,3 +19,13 @@ export async function requestJson<T>(request: HttpRequest, ...jsonPaths: string[
 
 	return json as T;
 }
+
+export async function requestQuery(request: HttpRequest, ...queryKeys: string[]) {
+	for (let queryKey of queryKeys) {
+		if (!request.query.has(queryKey)) {
+			throw new HandlingError(`Missing field '${queryKey}' in query`, 400, false);
+		}
+	}
+
+	return request.query.get.bind(request.query) as (name: string) => string;
+}
