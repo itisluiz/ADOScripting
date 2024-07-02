@@ -1,10 +1,11 @@
+import { azureBlob } from "../azure/blob";
 import { azureKeyvault } from "../azure/keyvault";
 import { azureTable } from "../azure/tables";
 import { HandlingError } from "../errors/handlingError";
 import { HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { md5 } from "../util/hashUtil";
 import { ProjectEntity } from "../interfaces/entities/projectEntity";
-import { projectRequest } from "../interfaces/requests/projectRequest";
+import { ProjectRequest } from "../interfaces/requests/projectRequest";
 import { requestJson, requestQuery } from "../util/requestUtil";
 import { RestError } from "@azure/data-tables";
 
@@ -29,11 +30,16 @@ async function projectHandlerGET(request: HttpRequest, context: InvocationContex
 }
 
 async function projectHandlerPOST(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-	let data = await requestJson<projectRequest>(request, "$.organization", "$.project", "$.pat");
+	let data = await requestJson<ProjectRequest>(request, "$.organization", "$.project", "$.pat");
 	let projectId = md5(data.organization, data.project);
 
 	await Promise.all([
-		azureKeyvault.setSecret(projectId, data.pat),
+		azureKeyvault.setSecret(projectId, data.pat).catch((error) => {
+			if (error instanceof RestError && error.statusCode === 409) {
+				throw new HandlingError("Token Keyvault secret is currently being deleted", 409, false);
+			}
+			throw error;
+		}),
 		azureTable("adoprojects").upsertEntity({
 			partitionKey: "P0",
 			rowKey: projectId,
@@ -42,7 +48,7 @@ async function projectHandlerPOST(request: HttpRequest, context: InvocationConte
 		} as ProjectEntity),
 	]);
 
-	context.info(`Project created for ${data.organization}::${data.project} (ID: ${projectId})`);
+	context.info(`Project '${projectId}' created for '${data.organization}::${data.project}'`);
 
 	return {
 		status: 201,
@@ -68,9 +74,14 @@ async function projectHandlerDELETE(request: HttpRequest, context: InvocationCon
 					throw error;
 				}
 			}),
+		azureBlob.deleteContainer(data("projectId")).catch((error) => {
+			if (!(error instanceof RestError) || error.statusCode !== 404) {
+				throw error;
+			}
+		}),
 	]);
 
-	context.info(`Project deleted (if it existed): ${data("projectId")}`);
+	context.info(`Project '${data("projectId")}' deleted (if it existed)`);
 
 	return {
 		status: 200,
