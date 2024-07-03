@@ -7,7 +7,7 @@ async function script(request: HttpRequest, context: InvocationContext): Promise
 }
 
 app.http("script", {
-	methods: ["GET", "PUT", "DELETE"],
+	methods: ["GET", "POST", "DELETE"],
 	authLevel: "function",
 	handler: script,
 });

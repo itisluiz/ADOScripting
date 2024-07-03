@@ -1,110 +1,76 @@
-import { azureBlob } from "../azure/blob";
-import { azureTable } from "../azure/tables";
-import { BlobItem } from "@azure/storage-blob";
+import { azureBlobs } from "../azure/blob";
+import { azureTables } from "../azure/tables";
 import { HandlingError } from "../errors/handlingError";
 import { HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
-import { Readable } from "stream";
+import { ProjectEntity } from "../interfaces/entities/projectEntity";
 import { requestJson, requestQuery } from "../util/requestUtil";
-import { RestError } from "@azure/data-tables";
 import { sanitizeFileName } from "../util/sanitizationUtil";
-import { ScriptRequest } from "../interfaces/requests/scriptRequest";
+import { ScriptGetResult } from "../interfaces/results/scriptGetResult";
+import { ScriptPostRequest, scriptPostRequestFields } from "../interfaces/requests/scriptPostRequest";
 
 async function scriptHandlerGET(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-	let data = await requestQuery(request, "projectId");
-	let blobs: BlobItem[] = [];
-	let blobIterator = azureBlob.getContainerClient(data("projectId")).listBlobsFlat();
+	const getQueryData = requestQuery(request, "projectId");
 
-	await azureTable("adoprojects")
-		.getEntity("P0", data("projectId"))
-		.catch((error) => {
-			if (error instanceof RestError && error.statusCode === 404) {
-				throw new HandlingError(`Project with ID ${data("projectId")} not found`, 404, false);
-			}
-			throw error;
-		});
+	const table = await azureTables.getOrCreateTable("projects");
+	const entity = await azureTables.getEntityIfExists<ProjectEntity>(table, getQueryData("projectId")!);
 
-	try {
-		for await (let blob of blobIterator) {
-			if (!blob.deleted) {
-				blobs.push(blob);
-			}
-		}
-	} catch (error) {
-		if (error instanceof RestError && error.statusCode === 404) {
-			return {
-				status: 200,
-				jsonBody: [],
-			};
-		}
-		throw error;
+	if (!entity) {
+		throw new HandlingError("Project not found", 404, false);
 	}
+
+	const container = await azureBlobs.getOrCreateContainer("scripts");
+	const blobItems = await azureBlobs.getBlobItems(container, `${getQueryData("projectId")}/`);
+
+	const result = blobItems.map((blobItem): ScriptGetResult => {
+		return {
+			name: blobItem.name.replace(`${getQueryData("projectId")}/`, ""),
+			size: blobItem.properties.contentLength!,
+			lastModified: blobItem.properties.lastModified!.toISOString(),
+		};
+	});
 
 	return {
 		status: 200,
-		jsonBody: blobs.map((blob) => {
-			return {
-				scriptName: blob.name,
-				size: blob.properties.contentLength,
-				lastModified: blob.properties.lastModified,
-			};
-		}),
+		jsonBody: result,
 	};
 }
 
-async function scriptHandlerPUT(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-	let data = await requestJson<ScriptRequest>(request, "$.projectId", "$.scriptName", "$.script");
+async function scriptHandlerPOST(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+	const jsonData = await requestJson<ScriptPostRequest>(request, ...scriptPostRequestFields);
 
-	await azureTable("adoprojects")
-		.getEntity("P0", data.projectId)
-		.catch((error) => {
-			if (error instanceof RestError && error.statusCode === 404) {
-				throw new HandlingError(`Project with ID ${data.projectId} not found`, 404, false);
-			}
-			throw error;
-		});
+	const table = await azureTables.getOrCreateTable("projects");
+	const entity = await azureTables.getEntityIfExists<ProjectEntity>(table, jsonData.projectId);
 
-	await azureBlob.createContainer(data.projectId).catch((error) => {
-		if (!(error instanceof RestError) || error.statusCode !== 409) {
-			throw error;
-		}
-	});
+	if (!entity) {
+		throw new HandlingError("Project not found", 404, false);
+	}
 
-	let sanitizedName = sanitizeFileName(data.scriptName, "js");
-	let container = azureBlob.getContainerClient(data.projectId);
-	await container.uploadBlockBlob(sanitizedName, Readable.from(data.script), data.script.length);
-
-	context.info(`Script '${sanitizedName}' uploaded to project '${data.projectId}'`);
+	const container = await azureBlobs.getOrCreateContainer("scripts");
+	const blobName = `${jsonData.projectId}/${sanitizeFileName(jsonData.name)}`;
+	await azureBlobs.uploadBlobItem(container, blobName, jsonData.script);
 
 	return {
-		status: 201,
-		jsonBody: {
-			scriptName: sanitizedName,
-		},
+		status: 200,
 	};
 }
 
 async function scriptHandlerDELETE(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-	let data = await requestQuery(request, "projectId", "scriptName");
+	const getQueryData = requestQuery(request, "projectId", "name");
 
-	await azureTable("adoprojects")
-		.getEntity("P0", data("projectId"))
-		.catch((error) => {
-			if (error instanceof RestError && error.statusCode === 404) {
-				throw new HandlingError(`Project with ID ${data("projectId")} not found`, 404, false);
-			}
-			throw error;
-		});
+	const table = await azureTables.getOrCreateTable("projects");
+	const entity = await azureTables.getEntityIfExists<ProjectEntity>(table, getQueryData("projectId")!);
 
-	let sanitizedName = sanitizeFileName(data("scriptName"), "js");
-	let container = azureBlob.getContainerClient(data("projectId"));
+	if (!entity) {
+		throw new HandlingError("Project not found", 404, false);
+	}
 
-	container.deleteBlob(sanitizedName).catch((error) => {
-		if (!(error instanceof RestError) || error.statusCode !== 404) {
-			throw error;
-		}
-	});
+	const container = await azureBlobs.getOrCreateContainer("scripts");
+	const blobName = `${getQueryData("projectId")}/${sanitizeFileName(getQueryData("name")!)}`;
+	const deleteResult = await azureBlobs.deleteBlobItemIfExists(container, blobName);
 
-	context.info(`Script '${sanitizedName}' deleted from project '${data("projectId")}' (if it existed)`);
+	if (!deleteResult.succeeded) {
+		throw new HandlingError("Script not found", 404, false);
+	}
 
 	return {
 		status: 200,
@@ -115,8 +81,8 @@ export async function scriptHandler(request: HttpRequest, context: InvocationCon
 	switch (request.method) {
 		case "GET":
 			return await scriptHandlerGET(request, context);
-		case "PUT":
-			return await scriptHandlerPUT(request, context);
+		case "POST":
+			return await scriptHandlerPOST(request, context);
 		case "DELETE":
 			return await scriptHandlerDELETE(request, context);
 		default:

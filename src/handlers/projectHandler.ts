@@ -1,87 +1,74 @@
-import { azureBlob } from "../azure/blob";
+import { azureBlobs } from "../azure/blob";
 import { azureKeyvault } from "../azure/keyvault";
-import { azureTable } from "../azure/tables";
+import { azureTables } from "../azure/tables";
 import { HandlingError } from "../errors/handlingError";
 import { HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { md5 } from "../util/hashUtil";
 import { ProjectEntity } from "../interfaces/entities/projectEntity";
-import { ProjectRequest } from "../interfaces/requests/projectRequest";
+import { ProjectGetResult } from "../interfaces/results/projectGetResult";
+import { ProjectPostRequest, projectPostRequestFields } from "../interfaces/requests/projectPostRequest";
+import { ProjectPostResult } from "../interfaces/results/projectPostResult";
 import { requestJson, requestQuery } from "../util/requestUtil";
-import { RestError } from "@azure/data-tables";
 
 async function projectHandlerGET(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-	let projects: ProjectEntity[] = [];
-	let projectIterator = azureTable("adoprojects").listEntities<ProjectEntity>();
+	const table = await azureTables.getOrCreateTable("projects");
+	const entities = await azureTables.getEntities<ProjectEntity>(table);
 
-	for await (let page of projectIterator.byPage()) {
-		projects = projects.concat(page);
-	}
+	const result = entities.map((entity): ProjectGetResult => {
+		return {
+			projectId: entity.rowKey,
+			organization: entity.organization,
+			project: entity.project,
+			timestamp: entity.timestamp,
+		};
+	});
 
 	return {
 		status: 200,
-		jsonBody: projects.map((project) => {
-			return {
-				projectId: project.rowKey,
-				organization: project.organization,
-				project: project.project,
-			};
-		}),
+		jsonBody: result,
 	};
 }
 
 async function projectHandlerPOST(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-	let data = await requestJson<ProjectRequest>(request, "$.organization", "$.project", "$.pat");
-	let projectId = md5(data.organization, data.project);
+	const jsonData = await requestJson<ProjectPostRequest>(request, ...projectPostRequestFields);
+	const projectId = md5(jsonData.organization, jsonData.project);
 
-	await Promise.all([
-		azureKeyvault.setSecret(projectId, data.pat).catch((error) => {
-			if (error instanceof RestError && error.statusCode === 409) {
-				throw new HandlingError("Token Keyvault secret is currently being deleted", 409, false);
-			}
-			throw error;
-		}),
-		azureTable("adoprojects").upsertEntity({
-			partitionKey: "P0",
-			rowKey: projectId,
-			organization: data.organization,
-			project: data.project,
-		} as ProjectEntity),
-	]);
+	const projectEntity: ProjectEntity = {
+		organization: jsonData.organization,
+		project: jsonData.project,
+		rowKey: projectId,
+		partitionKey: "",
+	};
 
-	context.info(`Project '${projectId}' created for '${data.organization}::${data.project}'`);
+	const table = await azureTables.getOrCreateTable("projects");
+	await azureKeyvault.setOrPurgeSecret(projectId, jsonData.apiKey);
+	await azureTables.updateOrCreateEntity(table, projectEntity);
+
+	const result: ProjectPostResult = {
+		projectId: projectId,
+	};
 
 	return {
-		status: 201,
-		jsonBody: {
-			projectId,
-		},
+		status: 200,
+		jsonBody: result,
 	};
 }
 
 async function projectHandlerDELETE(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-	let data = await requestQuery(request, "projectId");
+	const getQueryData = requestQuery(request, "projectId");
 
-	Promise.all([
-		azureKeyvault.beginDeleteSecret(data("projectId")).catch((error) => {
-			if (!(error instanceof RestError) || error.statusCode !== 404) {
-				throw error;
-			}
-		}),
-		azureTable("adoprojects")
-			.deleteEntity("P0", data("projectId"))
-			.catch((error) => {
-				if (!(error instanceof RestError) || error.statusCode !== 404) {
-					throw error;
-				}
-			}),
-		azureBlob.deleteContainer(data("projectId")).catch((error) => {
-			if (!(error instanceof RestError) || error.statusCode !== 404) {
-				throw error;
-			}
-		}),
+	const table = await azureTables.getOrCreateTable("projects");
+	const container = await azureBlobs.getOrCreateContainer("scripts");
+
+	let deletionResults = await Promise.all([
+		azureKeyvault.deleteSecretIfExists(getQueryData("projectId")!),
+		azureTables.deleteEntityIfExists(table, getQueryData("projectId")!),
+		azureBlobs.deleteBlobItems(container, `${getQueryData("projectId")}/`),
 	]);
 
-	context.info(`Project '${data("projectId")}' deleted (if it existed)`);
+	if (deletionResults[0] == null && deletionResults[1] == null && deletionResults[2].length === 0) {
+		throw new HandlingError("Project not found", 404, false);
+	}
 
 	return {
 		status: 200,
