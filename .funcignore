@@ -1,4 +1,2 @@
 .husky
 local.settings.json
-dist/script
-script/builtscript.js

@@ -6,12 +6,13 @@
 	"scripts": {
 		"prebuild": "npm run clean",
 		"prestart": "npm run build",
+		"prescript": "npm run build",
 		"clean": "rimraf dist",
 		"build": "tsc",
 		"start": "func start",
+		"script": "node dist/script/builder.js",
 		"format": "prettier --write .",
-		"prepare": "husky || echo Continuing without husky installation",
-		"buildscript": "tsc && node dist/script/builder.js"
+		"prepare": "husky || echo Continuing without husky installation"
 	},
 	"author": "itisluiz",
 	"license": "ISC",

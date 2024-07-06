@@ -1,4 +1,4 @@
 local.settings.json
 node_modules
 dist
-script/builtscript.js
+script/out.js

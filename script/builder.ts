@@ -1,12 +1,16 @@
 import * as fs from "fs";
-import script from "./script";
+import { script, scriptPath } from "./script";
 
-const scriptOutPath = "script/builtscript.js";
+export function getScriptBody() {
+	const scriptBody = script.toString();
+	let scriptLines = scriptBody.slice(scriptBody.indexOf("{") + 1, scriptBody.lastIndexOf("}")).split("\n");
+	scriptLines = scriptLines.filter((line) => line.trim().length > 0);
+	scriptLines = scriptLines.map((line) => line.replace(/ {4}/g, "\t").replace(/^\t/, ""));
 
-const scriptBody = script.toString();
-let scriptLines = scriptBody.slice(scriptBody.indexOf("{") + 1, scriptBody.lastIndexOf("}")).split("\n");
-scriptLines = scriptLines.filter((line) => line.trim().length > 0);
-scriptLines = scriptLines.map((line) => line.replace(/ {4}/g, "\t").replace(/^\t/, ""));
+	return scriptLines.join("\n") + "\n";
+}
 
-fs.writeFileSync(scriptOutPath, scriptLines.join("\n") + "\n");
-console.log(`Script saved to '${scriptOutPath}'`);
+if (require.main === module) {
+	fs.writeFileSync(scriptPath, getScriptBody());
+	console.log(`Script saved to '${scriptPath}'`);
+}

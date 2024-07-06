@@ -5,9 +5,11 @@ import { azureTables } from "../azure/tables";
 import { HandlingError } from "../errors/handlingError";
 import { HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { invokeScript } from "../util/scriptUtil";
-import { makeMetaLogger } from "../util/debugUtil";
+import { isRunningLocally, makeMetaLogger } from "../util/debugUtil";
 import { ProjectEntity } from "../interfaces/entities/projectEntity";
 import { requestHeader, requestJson } from "../util/requestUtil";
+import { resolve } from "path";
+import { getScriptBody } from "../../script/builder";
 
 export async function webhookHandlerPOST(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
 	const getHeaderData = requestHeader(request, "project-id");
@@ -33,6 +35,10 @@ export async function webhookHandlerPOST(request: HttpRequest, context: Invocati
 
 	let scriptDownloads = blobItems.map((blobItem) => azureBlobs.downloadBlobItemIfExists(container, blobItem.name));
 	scriptDownloads = scriptDownloads.filter((scriptDownload) => scriptDownload !== null);
+
+	if (isRunningLocally()) {
+		scriptDownloads.push(Promise.resolve([null as any, "[script]", getScriptBody()]));
+	}
 
 	let executionResults: { [key: string]: string } = {};
 	for await (const scriptDownload of scriptDownloads) {
