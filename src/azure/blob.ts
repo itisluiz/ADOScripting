@@ -1,5 +1,11 @@
 import { azureCredential } from "./identity";
-import { BlobItem, BlobServiceClient, ContainerClient } from "@azure/storage-blob";
+import {
+	BlobDownloadResponseParsed,
+	BlobItem,
+	BlobServiceClient,
+	ContainerClient,
+	RestError,
+} from "@azure/storage-blob";
 import { Readable } from "stream";
 import { text } from "stream/consumers";
 
@@ -17,14 +23,25 @@ async function uploadBlobItem(containerClient: ContainerClient, blobName: string
 	return await containerClient.uploadBlockBlob(blobName, Readable.from(content), content.length);
 }
 
-async function downloadBlobItem(containerClient: ContainerClient, blobName: string) {
-	const blobClient = containerClient.getBlobClient(blobName);
-	if (!(await blobClient.exists())) {
-		return null;
+async function downloadBlobItemIfExists(
+	containerClient: ContainerClient,
+	blobName: string,
+): Promise<[BlobDownloadResponseParsed, string, string] | null> {
+	try {
+		const blobClient = containerClient.getBlobClient(blobName);
+		const downloadResult = await blobClient.getBlockBlobClient().download();
+		return [
+			downloadResult,
+			blobName.substring(blobName.lastIndexOf("/") + 1),
+			await text(downloadResult.readableStreamBody!),
+		];
+	} catch (error) {
+		if (!(error instanceof RestError) || error.statusCode !== 404) {
+			throw error;
+		}
 	}
 
-	const downloadResult = await blobClient.getBlockBlobClient().download();
-	return [downloadResult, await text(downloadResult.readableStreamBody!)];
+	return null;
 }
 
 async function getBlobItems(containerClient: ContainerClient, directory?: string) {
@@ -53,7 +70,7 @@ export const azureBlobs = {
 	baseClient,
 	getOrCreateContainer,
 	uploadBlobItem,
-	downloadBlobItem,
+	downloadBlobItemIfExists,
 	getBlobItems,
 	deleteBlobItemIfExists,
 	deleteBlobItems,

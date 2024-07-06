@@ -28,3 +28,13 @@ export function requestQuery(request: HttpRequest, ...queryKeys: string[]) {
 
 	return request.query.get.bind(request.query);
 }
+
+export function requestHeader(request: HttpRequest, ...headerKeys: string[]) {
+	for (let headerKey of headerKeys) {
+		if (!request.headers.has(headerKey)) {
+			throw new HandlingError(`Missing field '${headerKey}' in headers`, 400, false);
+		}
+	}
+
+	return request.headers.get.bind(request.headers);
+}

@@ -1,3 +1,6 @@
+import { InvocationContext } from "@azure/functions";
+import { Logger } from "../interfaces/logger";
+
 export function neatStack(error: any, maxLines: number = 8): string {
 	let stackTrace: string[] = ["\nStack trace ----------------------------------------------------------------"];
 
@@ -13,4 +16,14 @@ export function neatStack(error: any, maxLines: number = 8): string {
 
 	stackTrace.push("-".repeat(stackTrace[0].length));
 	return stackTrace.join("\n");
+}
+
+export function makeMetaLogger(con: Console | InvocationContext, ...metadata: any[]): Logger {
+	return {
+		log: con.log.bind(con, ...metadata),
+		info: con.info.bind(con, ...metadata),
+		warn: con.warn.bind(con, ...metadata),
+		error: con.error.bind(con, ...metadata),
+		trace: con.log.bind(con, ...metadata),
+	};
 }
