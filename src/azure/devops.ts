@@ -1,3 +1,4 @@
+import { DevOps } from "../interfaces/devops";
 import { WebApi, getPersonalAccessTokenHandler } from "azure-devops-node-api";
 
 const entryClient = (organization: string, apiToken: string, vssps: boolean = false) =>
@@ -6,7 +7,7 @@ const entryClient = (organization: string, apiToken: string, vssps: boolean = fa
 		getPersonalAccessTokenHandler(apiToken),
 	);
 
-const entryClients = (organization: string, apiToken: string) => ({
+const entryClients = (organization: string, apiToken: string): DevOps => ({
 	organization: entryClient(organization, apiToken, false),
 	deployment: entryClient(organization, apiToken, true),
 });

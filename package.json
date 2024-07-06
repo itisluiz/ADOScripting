@@ -10,7 +10,8 @@
 		"build": "tsc",
 		"start": "func start",
 		"format": "prettier --write .",
-		"prepare": "husky || echo Continuing without husky installation"
+		"prepare": "husky || echo Continuing without husky installation",
+		"buildscript": "tsc && node dist/script/builder.js"
 	},
 	"author": "itisluiz",
 	"license": "ISC",
