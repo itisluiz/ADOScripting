@@ -1,4 +1,3 @@
 local.settings.json
 node_modules
 dist
-script/out.js

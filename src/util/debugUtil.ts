@@ -27,7 +27,3 @@ export function makeMetaLogger(con: Console | InvocationContext, ...metadata: an
 		trace: con.log.bind(con, ...metadata),
 	};
 }
-
-export function isRunningLocally() {
-	return !process.env.WEBSITE_INSTANCE_ID;
-}
